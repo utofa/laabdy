@@ -233,7 +233,18 @@ func (h *Handler) HandleText(update tgbotapi.Update) {
 
 	// Проверяем, ожидается ли редактирование
 	if pendingEdit, messageID, err := h.usecase.GetPendingEdit(chatID); err == nil && pendingEdit != "" {
-		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, text)
+		editMsg := tgbotapi.NewEditMessageTextAndMarkup(
+			chatID,
+			messageID,
+			text,
+			tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("Опубликовать", "publish"),
+					tgbotapi.NewInlineKeyboardButtonData("Редактировать", "edit"),
+					tgbotapi.NewInlineKeyboardButtonData("Запланировать", "schedule"),
+				),
+			),
+		)
 		if _, err := h.api.Request(editMsg); err != nil {
 			h.api.Send(tgbotapi.NewMessage(chatID, "Ошибка обновления текста"))
 			log.Printf("Ошибка редактирования: %v", err)
@@ -426,43 +437,42 @@ func (h *Handler) HandleCallback(update tgbotapi.Update) {
 		_, img1, img2, _, err := h.usecase.GetPendingPost(chatID)
 		if err != nil {
 			log.Printf("Ошибка получения отложенного поста для chatID %d: %v", chatID, err)
-			img1, img2 = "", "" // Если пост не найден, публикуем только текст
+			img1, img2 = "", ""
 		}
 		if img1 == "" || img2 == "" {
 			h.api.Send(tgbotapi.NewMessage(chatID, "Ошибка: изображения для поста отсутствуют"))
-			log.Printf("Ошибка: изображения отсутствуют для chatID %d", chatID)
 			return
 		}
-		// Truncate caption to 1024 characters
+
 		caption := msgText
 		if len(caption) > 1024 {
 			caption = caption[:1024]
-			log.Printf("Текст поста для chatID %d укорочен до 1024 символов", chatID)
+			log.Printf("Текст поста укорочен до 1024 символов")
 		}
-		log.Printf("Длина подписи для chatID %d: %d символов", chatID, len(caption))
+
 		mediaGroup := tgbotapi.NewMediaGroup(channelIDInt, []interface{}{
 			tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(img1)),
 			tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(img2)),
 		})
-		// Correct type assertion
+
 		media := mediaGroup.Media[0].(tgbotapi.InputMediaPhoto)
 		media.Caption = caption
 		mediaGroup.Media[0] = media
+
 		if _, err := h.api.Send(mediaGroup); err != nil {
 			h.api.Send(tgbotapi.NewMessage(chatID, "Ошибка публикации в канал"))
 			log.Printf("Ошибка публикации: %v", err)
 		} else {
 			notifyMsg := tgbotapi.NewMessage(chatID, "Пост с фотографиями успешно опубликован в канале!")
 			if len(msgText) > 1024 {
-				notifyMsg.Text += "\nВнимание: текст поста был укорочен из-за ограничений Telegram."
+				notifyMsg.Text += "\nВнимание: текст был укорочен."
 			}
 			h.api.Send(notifyMsg)
 			h.usecase.ClearPendingPost(chatID)
 		}
+
 		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "Опубликовано")
 		h.api.Request(callback)
-		edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{})
-		h.api.Request(edit)
 
 	case "edit":
 		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "Редактирование")
@@ -472,25 +482,21 @@ func (h *Handler) HandleCallback(update tgbotapi.Update) {
 			h.api.Send(tgbotapi.NewMessage(chatID, "Ошибка при сохранении данных для редактирования"))
 			log.Printf("Ошибка сохранения редактирования: %v", err)
 		}
-		edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{})
-		h.api.Request(edit)
 
 	case "schedule":
 		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "Планирование")
 		h.api.Request(callback)
+
 		_, img1, img2, _, err := h.usecase.GetPendingPost(chatID)
 		if err != nil {
-			log.Printf("Ошибка получения отложенного поста для chatID %d: %v", chatID, err)
-			img1, img2 = "", "" // Если пост не найден, сохраняем только текст
+			log.Printf("Ошибка получения отложенного поста: %v", err)
+			img1, img2 = "", ""
 		}
 		if err := h.usecase.SavePendingPost(chatID, msgText, img1, img2, time.Time{}); err != nil {
 			h.api.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Ошибка при сохранении поста: %v", err)))
-			log.Printf("Ошибка сохранения поста для chatID %d: %v", chatID, err)
 		} else {
 			h.api.Send(tgbotapi.NewMessage(chatID, "Отправьте дату и время публикации (DD.MM.YYYY HH:MM): /schedule <дата и время> (например, 11.08.2025 17:30)"))
 		}
-		edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, tgbotapi.InlineKeyboardMarkup{})
-		h.api.Request(edit)
 	}
 }
 

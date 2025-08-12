@@ -55,7 +55,7 @@ func (c *GroqClient) GenerateText(prompt string) (string, error) {
 	reqBody := groqRequest{
 		Model: "gpt-4", // или "gpt-4" - в зависимости от твоего доступа
 		Messages: []groqMessage{
-			{Role: "system", Content: "Ты помощник, который пишет креативные и интересные тексты для постов в Телеграм. ..."},
+			{Role: "system", Content: "Ты помощник, который пишет креативные и интересные тексты для постов в Телеграм. c максимальным количеством символов 1024 ..."},
 			{Role: "user", Content: prompt},
 		},
 		MaxTokens:   800,

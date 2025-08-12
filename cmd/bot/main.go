@@ -11,7 +11,10 @@ import (
 )
 
 func main() {
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	repo := repository.NewTopicRepository(cfg.DBPath)
 	uc := usecase.NewTopicUsecase(repo)

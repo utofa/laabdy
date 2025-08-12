@@ -13,7 +13,7 @@ type Config struct {
 	OpenAIAPIKey string
 }
 
-func LoadConfig() *Config {
+func LoadConfig() (*Config, error) {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Ошибка загрузки .env  файла")
@@ -22,5 +22,5 @@ func LoadConfig() *Config {
 		BotToken:     os.Getenv("BOT_TOKEN"),
 		DBPath:       os.Getenv("DB_PATH"),
 		OpenAIAPIKey: os.Getenv("GROQ_API_KEY"),
-	}
+	}, nil
 }

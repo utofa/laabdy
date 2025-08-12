@@ -24,7 +24,8 @@ type TopicUsecase struct {
 		Img2      string // URL второй фотографии
 		PublishAt time.Time
 	}
-	mu sync.RWMutex
+	pendingSchedule map[int64]bool
+	mu              sync.RWMutex
 }
 
 // GenerateUsecase управляет генерацией текстов.
@@ -46,6 +47,7 @@ func NewTopicUsecase(r *repository.TopicRepository) *TopicUsecase {
 			Img2      string
 			PublishAt time.Time
 		}),
+		pendingSchedule: make(map[int64]bool),
 	}
 }
 
@@ -82,7 +84,7 @@ func (u *GenerateUsecase) GenerateFromTopic(topic string) (string, error) {
 			"Эмодзи используй аккуратно, чтобы усиливать настроение, а не просто вставлять. "+
 			"Избегай прямых объяснений — передавай чувства через образы и действия. "+
 			"Пиши от первого лица, от женского лица, с уверенностью, мягкой провокацией и тайной. "+
-			"Сгенерируй текст в таком стиле по теме: %s", topic)
+			"Сгенерируй текст с длинной 1024 символов в таком стиле по теме: %s", topic)
 	return u.gpt.GenerateText(prompt)
 }
 
@@ -164,13 +166,13 @@ func (u *TopicUsecase) ClearPendingPost(chatID int64) error {
 	return nil
 }
 
-// GetScheduledPosts возвращает посты, готовые к публикации.
+// GetScheduledPosts возвращает посты, готовые к публикации, и удаляет их из pendingPosts.
 func (u *TopicUsecase) GetScheduledPosts() map[int64]struct {
 	Text, Img1, Img2 string
 	PublishAt        time.Time
 } {
-	u.mu.RLock()
-	defer u.mu.RUnlock()
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	posts := make(map[int64]struct {
 		Text, Img1, Img2 string
 		PublishAt        time.Time
@@ -178,7 +180,34 @@ func (u *TopicUsecase) GetScheduledPosts() map[int64]struct {
 	for chatID, post := range u.pendingPosts {
 		if !post.PublishAt.IsZero() && (post.PublishAt.Before(time.Now()) || post.PublishAt.Equal(time.Now())) {
 			posts[chatID] = post
+			delete(u.pendingPosts, chatID) // Удаляем пост, чтобы он не публиковался повторно
 		}
 	}
 	return posts
+}
+
+// SavePendingSchedule сохраняет состояние ожидания ввода даты.
+func (u *TopicUsecase) SavePendingSchedule(chatID int64) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.pendingSchedule[chatID] = true
+	return nil
+}
+
+// IsPendingSchedule проверяет, ожидается ли ввод даты.
+func (u *TopicUsecase) IsPendingSchedule(chatID int64) bool {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.pendingSchedule[chatID]
+}
+
+// ClearPendingSchedule очищает состояние ожидания ввода даты.
+func (u *TopicUsecase) ClearPendingSchedule(chatID int64) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if _, exists := u.pendingSchedule[chatID]; !exists {
+		return errors.New("нет состояния ожидания даты")
+	}
+	delete(u.pendingSchedule, chatID)
+	return nil
 }
